@@ -16,6 +16,7 @@ export class AudioEngine {
   private detection: DetectionConfig = { onsetThreshold: 0.28, minRms: 0.012 }
   private timeDomain = new Float32Array(1024)
   private onFrame: ((frame: AnalysisFrame) => void) | null = null
+  private captureGeneration = 0
   onError: ((message: string) => void) | null = null
 
   setGain(value: number): void {
@@ -34,27 +35,49 @@ export class AudioEngine {
     return this.context
   }
 
-  async startMic(onFrame: (frame: AnalysisFrame) => void): Promise<void> {
+  async startMic(onFrame: (frame: AnalysisFrame) => void): Promise<boolean> {
     this.onFrame = onFrame
-    const context = await this.ensure()
-    await this.ensureWorklet(context)
-    this.disconnectInput()
-    this.stream = await captureMicrophone()
-    this.source = context.createMediaStreamSource(this.stream)
-    this.gain = context.createGain()
-    this.gain.gain.value = this.gainValue
-    this.analyser = context.createAnalyser()
-    this.analyser.fftSize = 1024
-    this.analyser.smoothingTimeConstant = 0.65
-    this.source.connect(this.gain)
-    this.gain.connect(this.analyser)
-    if (this.worklet) this.gain.connect(this.worklet)
+    const generation = ++this.captureGeneration
+    // Request the mic before any await. Android Chromium drops the tap if this waits.
+    const micPromise = captureMicrophone()
+    if (!this.context) this.context = new AudioContext({ latencyHint: 'interactive' })
+    const context = this.context
+    if (context.state === 'suspended') void context.resume()
+    try {
+      await this.ensure()
+      await this.ensureWorklet(context)
+      const stream = await micPromise
+      if (generation !== this.captureGeneration) {
+        stream.getTracks().forEach((track) => track.stop())
+        return false
+      }
+      this.disconnectInput()
+      this.stream = stream
+      this.source = context.createMediaStreamSource(this.stream)
+      this.gain = context.createGain()
+      this.gain.gain.value = this.gainValue
+      this.analyser = context.createAnalyser()
+      this.analyser.fftSize = 1024
+      this.analyser.smoothingTimeConstant = 0.65
+      this.source.connect(this.gain)
+      this.gain.connect(this.analyser)
+      if (this.worklet) this.gain.connect(this.worklet)
+      return true
+    } catch (error) {
+      if (generation === this.captureGeneration) {
+        this.captureGeneration += 1
+        void micPromise.then((stream) => stream.getTracks().forEach((track) => track.stop())).catch(() => undefined)
+      }
+      throw error
+    }
   }
 
   stopMic(): void {
+    this.captureGeneration += 1
     this.disconnectInput()
     this.stream?.getTracks().forEach((track) => track.stop())
     this.stream = null
+    this.onFrame = null
   }
 
   visual(): { rms: number; peak: number } {

@@ -50,7 +50,7 @@ export function InputPanel({ state, actions, getLive, visualLevel }: Beatboox) {
         onClick={() => actions.calibrate()}
         disabled={state.calibrating}
       >
-        {state.calibrating ? 'Listening to the room…' : 'Calibrate noise floor'}
+        {state.calibrating ? (state.armed ? 'Listening to the room…' : 'Waiting for the microphone…') : 'Calibrate noise floor'}
       </button>
       <p className="mt-3 text-xs leading-5 text-muted">Use headphones so the synth does not leak back into the microphone. Raw input is used: echo cancellation and auto gain stay off.</p>
     </Panel>

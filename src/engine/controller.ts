@@ -65,6 +65,8 @@ class Controller {
   private examples: DrumExample[] = []
   private calSamples: number[] = []
   private calTimer = 0
+  private arming: Promise<void> | null = null
+  private armGeneration = 0
   private hitTimer = 0
   private timers: number[] = []
   private playToken = 0
@@ -202,15 +204,29 @@ class Controller {
     }
   }
 
-  private async arm(): Promise<void> {
+  private arm(): Promise<void> {
+    if (this.state.armed) return Promise.resolve()
+    if (this.arming) return this.arming
+    const generation = ++this.armGeneration
+    this.arming = this.armNow(generation).finally(() => {
+      if (generation === this.armGeneration) this.arming = null
+    })
+    return this.arming
+  }
+
+  private async armNow(generation: number): Promise<void> {
+    const ready = this.audio.startMic(this.onFrame)
     try {
       await this.ensureOutput()
+      if (generation !== this.armGeneration) return
       this.audio.setGain(this.state.gain)
-      await this.audio.startMic(this.onFrame)
+      const started = await ready
+      if (!started || generation !== this.armGeneration) return
       this.pushDetection()
       void this.enableMidi()
       this.commit({ armed: true, error: null })
     } catch (error) {
+      if (generation !== this.armGeneration) return
       this.audio.stopMic()
       this.commit({
         armed: false,
@@ -220,6 +236,7 @@ class Controller {
   }
 
   private disarm(): void {
+    this.armGeneration += 1
     this.audio.stopMic()
     window.clearTimeout(this.calTimer)
     this.releaseVoices()
@@ -246,14 +263,18 @@ class Controller {
     if (mode === 'drums') void this.prepareDrums()
   }
 
-  private calibrate(): void {
-    if (!this.state.armed) {
-      this.commit({ error: 'Arm the microphone before calibrating.' })
-      return
-    }
+  private async calibrate(): Promise<void> {
+    if (this.state.calibrating) return
     this.calSamples = []
     window.clearTimeout(this.calTimer)
     this.commit({ calibrating: true, error: null })
+    if (!this.state.armed) {
+      await this.arm()
+      if (!this.state.armed) {
+        this.commit({ calibrating: false })
+        return
+      }
+    }
     this.calTimer = window.setTimeout(() => {
       const samples = [...this.calSamples].sort((left, right) => left - right)
       const noiseFloor = samples[Math.floor(samples.length * 0.85)] ?? 0.005
