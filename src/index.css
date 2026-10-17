@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #0c0d0f;
+  --color-panel: #14161a;
+  --color-ink: #e7e8ea;
+  --color-muted: #8b909a;
+  --color-line: #2a2d33;
+  --color-signal: #e8a317;
+  --color-danger: #e15a4a;
+  --color-ok: #7dba6a;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+select,
+input[type="number"] {
+  min-height: 44px;
+  border: 1px solid var(--color-line);
+  border-radius: 4px;
+  background: #0c0d0f;
+  padding: 0 8px;
+}
+
+input[type="range"] {
+  accent-color: #e8a317;
+  min-height: 44px;
+}
+
+input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #e8a317;
+}
+
+:focus-visible {
+  outline: 2px solid #e8a317;
+  outline-offset: 2px;
+}
