@@ -17,6 +17,9 @@ export class AudioEngine {
   private timeDomain = new Float32Array(1024)
   private onFrame: ((frame: AnalysisFrame) => void) | null = null
   private captureGeneration = 0
+  private speakerDest: MediaStreamAudioDestinationNode | null = null
+  private speaker: HTMLAudioElement | null = null
+  private monitor: AudioNode | null = null
   onError: ((message: string) => void) | null = null
 
   setGain(value: number): void {
@@ -30,19 +33,29 @@ export class AudioEngine {
   }
 
   async ensure(): Promise<AudioContext> {
-    if (!this.context) this.context = new AudioContext({ latencyHint: 'interactive' })
-    if (this.context.state === 'suspended') await this.context.resume()
-    return this.context
+    const context = this.openContext()
+    this.mountSpeaker()
+    if (context.state === 'suspended') await context.resume()
+    return context
+  }
+
+  output(): AudioNode {
+    const context = this.openContext()
+    this.mountSpeaker()
+    return this.speakerDest ?? context.destination
+  }
+
+  keepMonitor(monitor: AudioNode): void {
+    this.monitor = monitor
   }
 
   async startMic(onFrame: (frame: AnalysisFrame) => void): Promise<boolean> {
     this.onFrame = onFrame
     const generation = ++this.captureGeneration
-    // Request the mic before any await. Android Chromium drops the tap if this waits.
+    const context = this.openContext()
+    // Unlock the loudspeaker and request the mic before any await. Android drops both after a wait.
+    this.mountSpeaker()
     const micPromise = captureMicrophone()
-    if (!this.context) this.context = new AudioContext({ latencyHint: 'interactive' })
-    const context = this.context
-    if (context.state === 'suspended') void context.resume()
     try {
       await this.ensure()
       await this.ensureWorklet(context)
@@ -62,6 +75,7 @@ export class AudioEngine {
       this.source.connect(this.gain)
       this.gain.connect(this.analyser)
       if (this.worklet) this.gain.connect(this.worklet)
+      void this.speaker?.play().catch(() => undefined)
       return true
     } catch (error) {
       if (generation === this.captureGeneration) {
@@ -123,6 +137,42 @@ export class AudioEngine {
     this.configure(this.detection)
   }
 
+  private openContext(): AudioContext {
+    if (!this.context) this.context = new AudioContext({ latencyHint: 'interactive' })
+    if (this.context.state === 'suspended') void this.context.resume()
+    return this.context
+  }
+
+  private mountSpeaker(): void {
+    const context = this.context
+    if (!context || this.speakerDest || !/Android/i.test(navigator.userAgent)) return
+    const dest = context.createMediaStreamDestination()
+    const audio = document.createElement('audio')
+    audio.autoplay = true
+    audio.setAttribute('playsinline', 'true')
+    audio.volume = 1
+    audio.srcObject = dest.stream
+    audio.style.display = 'none'
+    document.body.appendChild(audio)
+    this.speakerDest = dest
+    this.speaker = audio
+    void audio.play().catch(() => {
+      audio.remove()
+      if (this.speaker === audio) {
+        this.speaker = null
+        this.speakerDest = null
+      }
+      const monitor = this.monitor
+      if (!monitor) return
+      try {
+        monitor.disconnect()
+      } catch {
+        // The monitor may not be connected yet.
+      }
+      monitor.connect(context.destination)
+    })
+  }
+
   private disconnectInput(): void {
     this.source?.disconnect()
     this.gain?.disconnect()
@@ -137,18 +187,21 @@ async function captureMicrophone(): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
     throw new Error('This browser cannot open a microphone.')
   }
-  const raw: MediaStreamConstraints = {
-    audio: {
-      echoCancellation: false,
-      noiseSuppression: false,
-      autoGainControl: false,
-      channelCount: 1,
-    },
-    video: false,
+  // Exact false keeps Android out of call mode, which plays the synth through the earpiece.
+  const clean: MediaTrackConstraints = {
+    echoCancellation: false,
+    noiseSuppression: false,
+    autoGainControl: false,
   }
   try {
-    return await navigator.mediaDevices.getUserMedia(raw)
+    return await navigator.mediaDevices.getUserMedia({ audio: { ...clean, channelCount: 1 }, video: false })
   } catch {
-    return navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio: clean, video: false })
+    } catch {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      await stream.getAudioTracks()[0]?.applyConstraints(clean).catch(() => undefined)
+      return stream
+    }
   }
 }

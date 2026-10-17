@@ -26,11 +26,18 @@ export function MelodyPanel({ state, actions, getLive }: Beatboox) {
     let frame = 0
     const tick = () => {
       const live = getLive()
-      const named = live.frequency > 0 && live.confidence > 0.45 ? noteName(hzToMidi(live.frequency)) : '–'
-      if (nameRef.current) nameRef.current.textContent = state.activeNote !== null ? noteName(state.activeNote) : named
+      const heard = live.frequency > 0 && live.confidence > 0.45
+      if (nameRef.current) {
+        nameRef.current.textContent =
+          state.activeNote !== null ? noteName(state.activeNote) : heard ? noteName(hzToMidi(live.frequency)) : '–'
+      }
       if (detailRef.current) {
         detailRef.current.textContent =
-          live.frequency > 0 ? `${live.frequency.toFixed(1)} Hz · conf ${live.confidence.toFixed(2)}` : 'Waiting for a note'
+          state.activeNote !== null
+            ? `${live.frequency.toFixed(1)} Hz · synth on`
+            : heard
+              ? `${live.frequency.toFixed(1)} Hz · conf ${live.confidence.toFixed(2)} · waiting to lock`
+              : 'Waiting for a note'
       }
       if (needleRef.current) {
         const cents = Math.max(-50, Math.min(50, live.cents))

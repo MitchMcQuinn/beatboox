@@ -12,6 +12,9 @@ export default function App() {
     <div className="flex min-h-dvh flex-col">
       <TopBar {...beat} />
       {beat.state.error && <p className="bg-danger/15 px-3 py-2 text-sm text-danger">{beat.state.error}</p>}
+      {!beat.state.monitor && (
+        <p className="bg-signal/15 px-3 py-2 text-sm text-signal">Monitor is off, so the built-in synth is silent.</p>
+      )}
       {beat.state.midiBanner && (
         <p className="border-b border-line bg-black/40 px-3 py-2 text-sm text-muted">{beat.state.midiBanner}</p>
       )}

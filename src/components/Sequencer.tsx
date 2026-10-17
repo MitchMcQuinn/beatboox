@@ -4,6 +4,7 @@ import type { Beatboox } from '../engine/useBeatboox.ts'
 import type { RollNote } from '../types.ts'
 
 export function Sequencer({ state, actions, getPlayhead }: Beatboox) {
+  const section = useRef<HTMLElement>(null)
   const line = useRef<HTMLDivElement>(null)
   const drag = useRef<{ id: string; mode: 'move' | 'resize'; originX: number; start: number; duration: number; nextStart: number; nextDuration: number } | null>(null)
   const pps = 90
@@ -28,6 +29,10 @@ export function Sequencer({ state, actions, getPlayhead }: Beatboox) {
   }, [getPlayhead, state.playing])
 
   useEffect(() => {
+    if (state.recording) section.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [state.recording])
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return
@@ -41,9 +46,11 @@ export function Sequencer({ state, actions, getPlayhead }: Beatboox) {
   }, [actions, state.selectedNoteId])
 
   return (
-    <section className="border-t border-line bg-panel">
+    <section ref={section} className="border-t border-line bg-panel">
       <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-        <h2 className="mr-2 text-[11px] tracking-[0.16em] text-muted uppercase">Piano roll</h2>
+        <h2 className={`mr-2 text-[11px] tracking-[0.16em] uppercase ${state.recording ? 'text-danger' : 'text-muted'}`}>
+          {state.recording ? 'Recording' : 'Piano roll'}
+        </h2>
         <label className="flex items-center gap-2 text-xs text-muted">
           BPM
           <input
@@ -82,6 +89,13 @@ export function Sequencer({ state, actions, getPlayhead }: Beatboox) {
           </label>
         )}
       </div>
+      {state.notes.length === 0 && (
+        <p className="px-3 pb-2 text-xs leading-5 text-muted">
+          {state.recording
+            ? 'Sing a steady note. It is drawn here as soon as the pitch locks, and you should hear the synth.'
+            : 'Press Record, then sing. Notes show up in this roll, and Play listens back through the synth.'}
+        </p>
+      )}
       <div className="max-h-64 overflow-auto border-t border-line" onPointerDown={() => actions.selectNote(null)}>
         <div className="relative" style={{ width: 48 + span * pps, height: Math.max(pitches.length, 1) * rowH }}>
           <div className="absolute top-0 bottom-0 left-0 w-12 border-r border-line bg-panel">

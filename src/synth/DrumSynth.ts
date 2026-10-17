@@ -13,6 +13,7 @@ export class DrumSynth {
   }
 
   trigger(pad: PadId, time: number, velocity: number): void {
+    time = Math.max(this.ctx.currentTime, Number.isFinite(time) ? time : this.ctx.currentTime)
     const level = Math.max(0.0001, (velocity / 127) * 0.9)
     if (pad === 'kick') this.kick(time, level)
     else if (pad === 'snare') this.snare(time, level)

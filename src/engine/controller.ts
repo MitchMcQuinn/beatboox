@@ -67,6 +67,7 @@ class Controller {
   private calTimer = 0
   private arming: Promise<void> | null = null
   private armGeneration = 0
+  private lastRollPublish = 0
   private hitTimer = 0
   private timers: number[] = []
   private playToken = 0
@@ -225,6 +226,7 @@ class Controller {
       this.pushDetection()
       void this.enableMidi()
       this.commit({ armed: true, error: null })
+      this.chime()
     } catch (error) {
       if (generation !== this.armGeneration) return
       this.audio.stopMic()
@@ -477,7 +479,12 @@ class Controller {
   }
 
   private async toggleRecord(): Promise<void> {
-    await this.ensureOutput()
+    try {
+      await this.ensureOutput()
+    } catch (error) {
+      this.commit({ error: error instanceof Error ? error.message : 'Could not start recording.' })
+      return
+    }
     if (this.state.playing) this.stopPlayback()
     if (this.state.recording) {
       const now = this.audio.context?.currentTime ?? 0
@@ -617,6 +624,10 @@ class Controller {
     } else if (stamped.features) {
       this.dispatchDrum(stamped)
     }
+    if (this.state.recording && stamped.time - this.lastRollPublish > 0.1) {
+      this.lastRollPublish = stamped.time
+      this.commit({ notes: this.recorder.snapshot(stamped.time) })
+    }
   }
 
   private updateCents(frame: AnalysisFrame): void {
@@ -633,17 +644,25 @@ class Controller {
   private dispatch(event: TrackerEvent): void {
     if (event.type === 'noteOn') {
       for (const note of event.notes) {
-        if (this.state.monitor) this.synth?.noteOn(note, event.velocity, event.time)
+        this.playSynth(note, event.velocity, event.time)
         this.midi.noteOn(MELODY_CHANNEL, note, event.velocity)
         this.held.add(`${MELODY_CHANNEL}:${note}`)
         this.recorder.noteOn(MELODY_CHANNEL, note, event.velocity, event.time)
       }
-      this.commit({ activeNote: event.note, activeChord: event.notes })
+      this.commit({
+        activeNote: event.note,
+        activeChord: event.notes,
+        notes: this.state.recording ? this.recorder.snapshot(event.time) : this.state.notes,
+      })
       return
     }
     if (event.type === 'noteOff') {
       for (const note of event.notes) {
-        this.synth?.noteOff(note, event.time)
+        try {
+          this.synth?.noteOff(note, event.time)
+        } catch {
+          // A failed envelope must not drop the recorded note.
+        }
         this.midi.noteOff(MELODY_CHANNEL, note)
         this.held.delete(`${MELODY_CHANNEL}:${note}`)
         this.recorder.noteOff(MELODY_CHANNEL, note, event.time)
@@ -651,7 +670,7 @@ class Controller {
       this.commit({
         activeNote: null,
         activeChord: [],
-        notes: this.state.recording ? [...this.recorder.notes] : this.state.notes,
+        notes: this.state.recording ? this.recorder.snapshot(event.time) : this.state.notes,
       })
       return
     }
@@ -748,12 +767,33 @@ class Controller {
     }
   }
 
+  private playSynth(note: number, velocity: number, time: number): void {
+    if (!this.state.monitor) return
+    try {
+      this.synth?.noteOn(note, velocity, time)
+    } catch {
+      // Scheduling in the past used to throw and skip the recorded note.
+    }
+  }
+
+  private chime(): void {
+    if (!this.state.monitor || !this.synth || !this.audio.context) return
+    const now = this.audio.context.currentTime + 0.05
+    this.playSynth(72, 90, now)
+    try {
+      this.synth.noteOff(72, now + 0.09)
+    } catch {
+      // The chime is only a speaker check.
+    }
+  }
+
   private async ensureOutput(): Promise<AudioContext> {
     const context = await this.audio.ensure()
     if (!this.monitorGain) {
       this.monitorGain = context.createGain()
       this.monitorGain.gain.value = this.state.monitor ? 1 : 0
-      this.monitorGain.connect(context.destination)
+      this.monitorGain.connect(this.audio.output())
+      this.audio.keepMonitor(this.monitorGain)
       this.synth = new PolySynth(context, this.monitorGain)
       this.drumSynth = new DrumSynth(context, this.monitorGain)
       this.applySynth()

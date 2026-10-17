@@ -39,18 +39,19 @@ export class PolySynth {
     const filter = this.ctx.createBiquadFilter()
     const gain = this.ctx.createGain()
     oscillator.type = this.waveform
-    oscillator.frequency.setValueAtTime(midiToHz(note), time)
-    oscillator.detune.setValueAtTime(this.bendCents, time)
+    const when = Math.max(this.ctx.currentTime, Number.isFinite(time) ? time : this.ctx.currentTime)
+    oscillator.frequency.setValueAtTime(midiToHz(note), when)
+    oscillator.detune.setValueAtTime(this.bendCents, when)
     filter.type = 'lowpass'
-    filter.frequency.setValueAtTime(this.currentCutoff(), time)
+    filter.frequency.setValueAtTime(this.currentCutoff(), when)
     filter.Q.value = 0.7
-    const peak = Math.max(0.0001, (velocity / 127) * 0.2)
-    gain.gain.setValueAtTime(0.0001, time)
-    gain.gain.exponentialRampToValueAtTime(peak, time + Math.max(0.005, this.attack))
+    const peak = Math.max(0.0001, (velocity / 127) * 0.45)
+    gain.gain.setValueAtTime(0.0001, when)
+    gain.gain.exponentialRampToValueAtTime(peak, when + Math.max(0.005, this.attack))
     oscillator.connect(filter)
     filter.connect(gain)
     gain.connect(this.master)
-    oscillator.start(time)
+    oscillator.start(when)
     voice.note = note
     voice.stopped = false
     voice.peak = peak
@@ -83,7 +84,7 @@ export class PolySynth {
 
   setExpression(value: number): void {
     this.expression = clamp(value / 127, 0, 1)
-    this.master.gain.setTargetAtTime(0.2 + 0.8 * this.expression, this.ctx.currentTime, 0.03)
+    this.master.gain.setTargetAtTime(0.55 + 0.45 * this.expression, this.ctx.currentTime, 0.03)
   }
 
   setModulation(value: number): void {
@@ -123,12 +124,13 @@ export class PolySynth {
       return
     }
     voice.stopped = true
+    const when = Math.max(this.ctx.currentTime, Number.isFinite(time) ? time : this.ctx.currentTime)
     const gain = voice.gain.gain
-    gain.cancelScheduledValues(time)
-    gain.setValueAtTime(Math.max(0.0001, voice.peak), time)
-    gain.exponentialRampToValueAtTime(0.0001, time + Math.max(0.03, this.release))
+    gain.cancelScheduledValues(when)
+    gain.setValueAtTime(Math.max(0.0001, voice.peak), when)
+    gain.exponentialRampToValueAtTime(0.0001, when + Math.max(0.03, this.release))
     try {
-      voice.osc.stop(time + this.release + 0.05)
+      voice.osc.stop(when + this.release + 0.05)
     } catch {
       // The oscillator may already have a stop time.
     }

@@ -2,7 +2,7 @@ import type { Beatboox } from '../engine/useBeatboox.ts'
 
 export function TopBar({ state, actions }: Beatboox) {
   return (
-    <header className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
+    <header className="sticky top-0 z-30 flex flex-wrap items-center gap-2 border-b border-line bg-bg px-3 py-2">
       <div className="mr-2">
         <p className="text-sm font-semibold tracking-wide">Beatboox</p>
         <p className="text-[11px] text-muted">Voice stays on this device</p>
@@ -26,7 +26,7 @@ export function TopBar({ state, actions }: Beatboox) {
         ))}
       </div>
       <button
-        className={`min-h-11 rounded border px-4 text-sm ${state.recording ? 'border-danger bg-danger text-white' : 'border-line'}`}
+        className={`min-h-11 rounded border px-4 text-sm font-semibold ${state.recording ? 'border-danger bg-danger text-white' : 'border-line'}`}
         onClick={() => void actions.toggleRecord()}
       >
         {state.recording ? 'Stop rec' : 'Record'}

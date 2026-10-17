@@ -75,6 +75,14 @@ export class Recorder {
     this.controls.push({ ...event, time: Math.max(0, now - this.origin) })
   }
 
+  snapshot(now: number): RollNote[] {
+    const open = [...this.open.values()].map((note) => ({
+      ...note,
+      duration: Math.max(0.05, now - this.origin - note.start),
+    }))
+    return [...this.notes, ...open]
+  }
+
   replace(notes: RollNote[], controls: ControlEvent[] = this.controls): void {
     this.notes = notes
     this.controls = controls
